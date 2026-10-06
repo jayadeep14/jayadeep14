@@ -1,0 +1,2345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Jayadeep T P — Terminal Profile</title>
+
+<script
+    async
+    src="https://docs.opencv.org/4.x/opencv.js"
+    onload="onOpenCVReady()">
+</script>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+    background: #020603;
+    color: #78ff9c;
+    font-family: "Courier New", Courier, monospace;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    overflow-x: hidden;
+}
+
+#svgContainer {
+    width: min(1400px, 96vw);
+    margin: 20px auto 30px;
+
+    background: #000;
+    border-radius: 15px;
+    overflow: hidden;
+
+    box-shadow:
+        0 0 40px rgba(72, 168, 103, 0.08);
+}
+
+#svgContainer svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #030a05;
+}
+
+.initial-message {
+    width: 100%;
+    aspect-ratio: 1400 / 600;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    color: #48a867;
+
+    background:
+        radial-gradient(
+            circle at center,
+            rgba(72, 168, 103, 0.06),
+            transparent 55%
+        );
+
+    font-size: 15px;
+    letter-spacing: 1px;
+}
+
+.initial-message span {
+    animation: terminalBlink 1.2s infinite;
+}
+
+@keyframes terminalBlink {
+    0%, 45% {
+        opacity: 1;
+    }
+
+    50%, 95% {
+        opacity: 0.25;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div id="svgContainer">
+    <div class="initial-message">
+        <span>
+            &gt; loading profile...
+        </span>
+    </div>
+</div>
+
+<canvas
+    id="processingCanvas"
+    style="display:none;">
+</canvas>
+
+<script>
+
+"use strict";
+
+/* ============================================================
+   PROFILE CONFIGURATION
+
+   CHANGE YOUR PROFILE HERE.
+   You do NOT need to edit the SVG below.
+============================================================ */
+
+const PROFILE = {
+
+    name: "Jayadeep T P",
+
+    profession:
+        "Linux | Python Vibe Coder | AI Builder",
+
+    skills: [
+        "Java AI",
+        "Robotics",
+        "PyQt6 / C++",
+        "LLM",
+        "AI Products"
+    ],
+
+    description:
+        "| visual. + secure APIs, SaaS products, custom tooling",
+
+    footer:
+        "> terminal profile",
+
+    image:
+        "Pasted-image.png"
+};
+
+
+/* ============================================================
+   GLOBALS
+============================================================ */
+
+let openCVReady = false;
+let selectedImage = null;
+let generatedSVG = "";
+let generationStarted = false;
+
+
+/* ============================================================
+   DOM
+============================================================ */
+
+const svgContainer =
+    document.getElementById("svgContainer");
+
+const processingCanvas =
+    document.getElementById("processingCanvas");
+
+
+/* ============================================================
+   OPENCV READY
+============================================================ */
+
+function onOpenCVReady() {
+
+    if (
+        typeof cv !== "undefined" &&
+        cv &&
+        typeof cv.Mat === "function"
+    ) {
+
+        openCVReady = true;
+
+        startAutomaticGeneration();
+
+    } else {
+
+        setTimeout(
+            onOpenCVReady,
+            100
+        );
+    }
+}
+
+
+/* ============================================================
+   LOAD IMAGE IMMEDIATELY
+============================================================ */
+
+function loadLocalPortrait() {
+
+    const image = new Image();
+
+    image.onload = function () {
+
+        selectedImage = image;
+
+        startAutomaticGeneration();
+    };
+
+    image.onerror = function () {
+
+        svgContainer.innerHTML = `
+            <div
+                class="initial-message"
+                style="color:#ff6b6b;">
+
+                <span>
+                    &gt; ERROR: ${escapeXML(PROFILE.image)} not found
+                </span>
+
+            </div>
+        `;
+    };
+
+    /*
+        Pasted-image.png must be in the
+        SAME folder as this HTML file.
+    */
+
+    image.src = PROFILE.image;
+}
+
+
+/* ============================================================
+   START AUTOMATIC GENERATION
+============================================================ */
+
+async function startAutomaticGeneration() {
+
+    if (
+        generationStarted ||
+        !openCVReady ||
+        !selectedImage
+    ) {
+        return;
+    }
+
+    generationStarted = true;
+
+    try {
+
+        const mask =
+            buildSubjectMask(
+                selectedImage
+            );
+
+        generatedSVG =
+            generateSVG(
+                selectedImage,
+                mask
+            );
+
+        mask.delete();
+
+        /*
+            SHOW THE GENERATED PROFILE
+            IMMEDIATELY.
+        */
+
+        svgContainer.innerHTML =
+            generatedSVG;
+
+    } catch (error) {
+
+        console.error(error);
+
+        svgContainer.innerHTML = `
+            <div
+                class="initial-message"
+                style="color:#ff6b6b;">
+
+                <span>
+                    &gt; ERROR:
+                    ${escapeXML(
+                        error.message ||
+                        "Unknown error"
+                    )}
+                </span>
+
+            </div>
+        `;
+    }
+}
+
+
+/* ============================================================
+   LARGEST COMPONENT
+============================================================ */
+
+function largestComponent(binary) {
+
+    const labels = new cv.Mat();
+    const stats = new cv.Mat();
+    const centroids = new cv.Mat();
+
+    const count =
+        cv.connectedComponentsWithStats(
+            binary,
+            labels,
+            stats,
+            centroids,
+            8,
+            cv.CV_32S
+        );
+
+    if (count <= 1) {
+
+        labels.delete();
+        stats.delete();
+        centroids.delete();
+
+        return binary.clone();
+    }
+
+    let largest = 1;
+    let largestArea = 0;
+
+    for (
+        let i = 1;
+        i < count;
+        i++
+    ) {
+
+        const area =
+            stats.intAt(
+                i,
+                cv.CC_STAT_AREA
+            );
+
+        if (area > largestArea) {
+
+            largestArea = area;
+            largest = i;
+        }
+    }
+
+    const result =
+        cv.Mat.zeros(
+            binary.rows,
+            binary.cols,
+            cv.CV_8UC1
+        );
+
+    for (
+        let y = 0;
+        y < labels.rows;
+        y++
+    ) {
+
+        for (
+            let x = 0;
+            x < labels.cols;
+            x++
+        ) {
+
+            if (
+                labels.intAt(y, x) ===
+                largest
+            ) {
+
+                result.ucharPtr(y, x)[0] =
+                    255;
+            }
+        }
+    }
+
+    labels.delete();
+    stats.delete();
+    centroids.delete();
+
+    return result;
+}
+
+
+/* ============================================================
+   BUILD SUBJECT MASK
+============================================================ */
+
+function buildSubjectMask(image) {
+
+    const maxWidth = 520;
+
+    const sourceWidth =
+        image.naturalWidth ||
+        image.width;
+
+    const sourceHeight =
+        image.naturalHeight ||
+        image.height;
+
+    const segWidth =
+        Math.min(
+            maxWidth,
+            sourceWidth
+        );
+
+    const segHeight =
+        Math.max(
+            1,
+            Math.round(
+                sourceHeight *
+                segWidth /
+                sourceWidth
+            )
+        );
+
+    processingCanvas.width =
+        segWidth;
+
+    processingCanvas.height =
+        segHeight;
+
+    const ctx =
+        processingCanvas.getContext(
+            "2d",
+            {
+                willReadFrequently: true
+            }
+        );
+
+    ctx.clearRect(
+        0,
+        0,
+        segWidth,
+        segHeight
+    );
+
+    ctx.drawImage(
+        image,
+        0,
+        0,
+        segWidth,
+        segHeight
+    );
+
+
+    /* --------------------------------------------------------
+       IMAGE TO OPENCV
+    -------------------------------------------------------- */
+
+    const src =
+        cv.imread(
+            processingCanvas
+        );
+
+    const bgr =
+        new cv.Mat();
+
+    cv.cvtColor(
+        src,
+        bgr,
+        cv.COLOR_RGBA2RGB
+    );
+
+
+    /* --------------------------------------------------------
+       INITIAL GRABCUT MASK
+    -------------------------------------------------------- */
+
+    const mask =
+        new cv.Mat(
+            segHeight,
+            segWidth,
+            cv.CV_8UC1,
+            new cv.Scalar(
+                cv.GC_PR_BGD
+            )
+        );
+
+    const border =
+        Math.max(
+            5,
+            Math.floor(
+                segWidth * 0.018
+            )
+        );
+
+
+    /* --------------------------------------------------------
+       BACKGROUND BORDER
+    -------------------------------------------------------- */
+
+    mask.rowRange(
+        0,
+        border
+    ).setTo(
+        new cv.Scalar(
+            cv.GC_BGD
+        )
+    );
+
+    mask.rowRange(
+        segHeight - border,
+        segHeight
+    ).setTo(
+        new cv.Scalar(
+            cv.GC_BGD
+        )
+    );
+
+    mask.colRange(
+        0,
+        border
+    ).setTo(
+        new cv.Scalar(
+            cv.GC_BGD
+        )
+    );
+
+    mask.colRange(
+        segWidth - border,
+        segWidth
+    ).setTo(
+        new cv.Scalar(
+            cv.GC_BGD
+        )
+    );
+
+
+    const cx =
+        Math.floor(
+            segWidth / 2
+        );
+
+
+    /* --------------------------------------------------------
+       HEAD REGION
+    -------------------------------------------------------- */
+
+    cv.ellipse(
+        mask,
+        new cv.Point(
+            cx,
+            Math.floor(
+                segHeight * 0.42
+            )
+        ),
+        new cv.Size(
+            Math.max(
+                1,
+                Math.floor(
+                    segWidth * 0.23
+                )
+            ),
+            Math.max(
+                1,
+                Math.floor(
+                    segHeight * 0.22
+                )
+            )
+        ),
+        0,
+        0,
+        360,
+        new cv.Scalar(
+            cv.GC_PR_FGD
+        ),
+        -1
+    );
+
+
+    /* --------------------------------------------------------
+       TORSO
+    -------------------------------------------------------- */
+
+    const torso =
+        cv.matFromArray(
+            4,
+            1,
+            cv.CV_32SC2,
+            [
+
+                Math.floor(
+                    segWidth * 0.08
+                ),
+                Math.floor(
+                    segHeight * 0.64
+                ),
+
+                Math.floor(
+                    segWidth * 0.92
+                ),
+                Math.floor(
+                    segHeight * 0.64
+                ),
+
+                Math.floor(
+                    segWidth * 0.98
+                ),
+                Math.floor(
+                    segHeight * 0.98
+                ),
+
+                Math.floor(
+                    segWidth * 0.02
+                ),
+                Math.floor(
+                    segHeight * 0.98
+                )
+            ]
+        );
+
+    cv.fillConvexPoly(
+        mask,
+        torso,
+        new cv.Scalar(
+            cv.GC_PR_FGD
+        )
+    );
+
+
+    /* --------------------------------------------------------
+       CERTAIN FACE
+    -------------------------------------------------------- */
+
+    cv.ellipse(
+        mask,
+        new cv.Point(
+            cx,
+            Math.floor(
+                segHeight * 0.43
+            )
+        ),
+        new cv.Size(
+            Math.max(
+                1,
+                Math.floor(
+                    segWidth * 0.07
+                )
+            ),
+            Math.max(
+                1,
+                Math.floor(
+                    segHeight * 0.14
+                )
+            )
+        ),
+        0,
+        0,
+        360,
+        new cv.Scalar(
+            cv.GC_FGD
+        ),
+        -1
+    );
+
+
+    /* --------------------------------------------------------
+       GRABCUT
+    -------------------------------------------------------- */
+
+    const bgModel =
+        new cv.Mat();
+
+    const fgModel =
+        new cv.Mat();
+
+    try {
+
+        cv.grabCut(
+            bgr,
+            mask,
+            new cv.Rect(
+                0,
+                0,
+                0,
+                0
+            ),
+            bgModel,
+            fgModel,
+            7,
+            cv.GC_INIT_WITH_MASK
+        );
+
+    } catch (error) {
+
+        console.error(
+            "GrabCut failed:",
+            error
+        );
+
+        const fallback =
+            cv.Mat.zeros(
+                segHeight,
+                segWidth,
+                cv.CV_8UC1
+            );
+
+        cv.ellipse(
+            fallback,
+            new cv.Point(
+                cx,
+                Math.floor(
+                    segHeight * 0.42
+                )
+            ),
+            new cv.Size(
+                Math.floor(
+                    segWidth * 0.25
+                ),
+                Math.floor(
+                    segHeight * 0.25
+                )
+            ),
+            0,
+            0,
+            360,
+            new cv.Scalar(255),
+            -1
+        );
+
+        cv.fillConvexPoly(
+            fallback,
+            torso,
+            new cv.Scalar(255)
+        );
+
+        const resized =
+            new cv.Mat();
+
+        cv.resize(
+            fallback,
+            resized,
+            new cv.Size(
+                sourceWidth,
+                sourceHeight
+            ),
+            0,
+            0,
+            cv.INTER_LANCZOS4
+        );
+
+        src.delete();
+        bgr.delete();
+        mask.delete();
+        torso.delete();
+        bgModel.delete();
+        fgModel.delete();
+        fallback.delete();
+
+        return resized;
+    }
+
+
+    /* --------------------------------------------------------
+       FOREGROUND
+    -------------------------------------------------------- */
+
+    const foreground =
+        cv.Mat.zeros(
+            segHeight,
+            segWidth,
+            cv.CV_8UC1
+        );
+
+    for (
+        let y = 0;
+        y < segHeight;
+        y++
+    ) {
+
+        for (
+            let x = 0;
+            x < segWidth;
+            x++
+        ) {
+
+            const value =
+                mask.ucharPtr(y, x)[0];
+
+            if (
+                value === cv.GC_FGD ||
+                value === cv.GC_PR_FGD
+            ) {
+
+                foreground.ucharPtr(
+                    y,
+                    x
+                )[0] = 255;
+            }
+        }
+    }
+
+
+    /* --------------------------------------------------------
+       LARGEST COMPONENT
+    -------------------------------------------------------- */
+
+    const largest =
+        largestComponent(
+            foreground
+        );
+
+
+    /* --------------------------------------------------------
+       MORPHOLOGICAL CLEANUP
+    -------------------------------------------------------- */
+
+    const closeKernel =
+        cv.Mat.ones(
+            7,
+            7,
+            cv.CV_8U
+        );
+
+    const openKernel =
+        cv.Mat.ones(
+            3,
+            3,
+            cv.CV_8U
+        );
+
+    const closed =
+        new cv.Mat();
+
+    cv.morphologyEx(
+        largest,
+        closed,
+        cv.MORPH_CLOSE,
+        closeKernel,
+        new cv.Point(-1, -1),
+        2
+    );
+
+    const opened =
+        new cv.Mat();
+
+    cv.morphologyEx(
+        closed,
+        opened,
+        cv.MORPH_OPEN,
+        openKernel,
+        new cv.Point(-1, -1),
+        1
+    );
+
+
+    /* --------------------------------------------------------
+       SOFT EDGES
+    -------------------------------------------------------- */
+
+    const blurred =
+        new cv.Mat();
+
+    cv.GaussianBlur(
+        opened,
+        blurred,
+        new cv.Size(
+            5,
+            5
+        ),
+        0,
+        0,
+        cv.BORDER_DEFAULT
+    );
+
+
+    /* --------------------------------------------------------
+       ORIGINAL SIZE
+    -------------------------------------------------------- */
+
+    const finalMask =
+        new cv.Mat();
+
+    cv.resize(
+        blurred,
+        finalMask,
+        new cv.Size(
+            sourceWidth,
+            sourceHeight
+        ),
+        0,
+        0,
+        cv.INTER_LANCZOS4
+    );
+
+
+    /* --------------------------------------------------------
+       CLEANUP
+    -------------------------------------------------------- */
+
+    src.delete();
+    bgr.delete();
+    mask.delete();
+    torso.delete();
+
+    bgModel.delete();
+    fgModel.delete();
+
+    foreground.delete();
+    largest.delete();
+
+    closeKernel.delete();
+    openKernel.delete();
+
+    closed.delete();
+    opened.delete();
+    blurred.delete();
+
+    return finalMask;
+}
+
+
+/* ============================================================
+   COVER CROP
+============================================================ */
+
+function coverCropBox(
+    width,
+    height,
+    ratio
+) {
+
+    const sourceRatio =
+        width / height;
+
+    if (
+        sourceRatio > ratio
+    ) {
+
+        const cropWidth =
+            Math.floor(
+                height * ratio
+            );
+
+        const left =
+            Math.floor(
+                (width - cropWidth) / 2
+            );
+
+        return {
+            x: left,
+            y: 0,
+            width: cropWidth,
+            height: height
+        };
+    }
+
+    const cropHeight =
+        Math.floor(
+            width / ratio
+        );
+
+    const top =
+        Math.floor(
+            (height - cropHeight) / 2
+        );
+
+    return {
+        x: 0,
+        y: top,
+        width: width,
+        height: cropHeight
+    };
+}
+
+
+/* ============================================================
+   ESCAPE XML
+============================================================ */
+
+function escapeXML(value) {
+
+    return String(value)
+        .replace(
+            /&/g,
+            "&amp;"
+        )
+        .replace(
+            /</g,
+            "&lt;"
+        )
+        .replace(
+            />/g,
+            "&gt;"
+        )
+        .replace(
+            /"/g,
+            "&quot;"
+        )
+        .replace(
+            /'/g,
+            "&apos;"
+        );
+}
+
+
+/* ============================================================
+   GENERATE PARTICLES
+============================================================ */
+
+function generateParticles(
+    image,
+    mask
+) {
+
+    const DURATION = 10.0;
+
+    const P_W = 460;
+    const P_H = 480;
+
+    const P_X = 850;
+    const P_Y = 60;
+
+    const SPACING = 4;
+
+    const cols =
+        Math.floor(
+            P_W / SPACING
+        );
+
+    const rows =
+        Math.floor(
+            P_H / SPACING
+        );
+
+
+    /* --------------------------------------------------------
+       SOURCE CANVAS
+    -------------------------------------------------------- */
+
+    const sourceCanvas =
+        document.createElement(
+            "canvas"
+        );
+
+    sourceCanvas.width =
+        image.naturalWidth ||
+        image.width;
+
+    sourceCanvas.height =
+        image.naturalHeight ||
+        image.height;
+
+    const sourceContext =
+        sourceCanvas.getContext(
+            "2d",
+            {
+                willReadFrequently: true
+            }
+        );
+
+    sourceContext.drawImage(
+        image,
+        0,
+        0
+    );
+
+
+    /* --------------------------------------------------------
+       CROP
+    -------------------------------------------------------- */
+
+    const crop =
+        coverCropBox(
+            sourceCanvas.width,
+            sourceCanvas.height,
+            P_W / P_H
+        );
+
+
+    /* --------------------------------------------------------
+       GRAYSCALE IMAGE
+    -------------------------------------------------------- */
+
+    const grayCanvas =
+        document.createElement(
+            "canvas"
+        );
+
+    grayCanvas.width =
+        cols;
+
+    grayCanvas.height =
+        rows;
+
+    const grayContext =
+        grayCanvas.getContext(
+            "2d",
+            {
+                willReadFrequently: true
+            }
+        );
+
+    grayContext.filter =
+        "grayscale(1) contrast(135%)";
+
+    grayContext.drawImage(
+        sourceCanvas,
+
+        crop.x,
+        crop.y,
+        crop.width,
+        crop.height,
+
+        0,
+        0,
+        cols,
+        rows
+    );
+
+    const grayData =
+        grayContext.getImageData(
+            0,
+            0,
+            cols,
+            rows
+        ).data;
+
+
+    /* --------------------------------------------------------
+       MASK CANVAS
+    -------------------------------------------------------- */
+
+    const maskCanvas =
+        document.createElement(
+            "canvas"
+        );
+
+    maskCanvas.width =
+        sourceCanvas.width;
+
+    maskCanvas.height =
+        sourceCanvas.height;
+
+    const maskContext =
+        maskCanvas.getContext(
+            "2d",
+            {
+                willReadFrequently: true
+            }
+        );
+
+    const maskData =
+        new Uint8ClampedArray(
+            mask.rows *
+            mask.cols *
+            4
+        );
+
+    for (
+        let y = 0;
+        y < mask.rows;
+        y++
+    ) {
+
+        for (
+            let x = 0;
+            x < mask.cols;
+            x++
+        ) {
+
+            const value =
+                mask.ucharPtr(y, x)[0];
+
+            const index =
+                (
+                    y * mask.cols +
+                    x
+                ) * 4;
+
+            maskData[index] =
+                value;
+
+            maskData[index + 1] =
+                value;
+
+            maskData[index + 2] =
+                value;
+
+            maskData[index + 3] =
+                255;
+        }
+    }
+
+    const maskImageData =
+        new ImageData(
+            maskData,
+            mask.cols,
+            mask.rows
+        );
+
+    maskContext.putImageData(
+        maskImageData,
+        0,
+        0
+    );
+
+
+    /* --------------------------------------------------------
+       SMALL MASK
+    -------------------------------------------------------- */
+
+    const smallMaskCanvas =
+        document.createElement(
+            "canvas"
+        );
+
+    smallMaskCanvas.width =
+        cols;
+
+    smallMaskCanvas.height =
+        rows;
+
+    const smallMaskContext =
+        smallMaskCanvas.getContext(
+            "2d",
+            {
+                willReadFrequently: true
+            }
+        );
+
+    smallMaskContext.drawImage(
+        maskCanvas,
+
+        crop.x,
+        crop.y,
+        crop.width,
+        crop.height,
+
+        0,
+        0,
+        cols,
+        rows
+    );
+
+    const smallMaskData =
+        smallMaskContext.getImageData(
+            0,
+            0,
+            cols,
+            rows
+        ).data;
+
+
+    /* --------------------------------------------------------
+       PARTICLES
+    -------------------------------------------------------- */
+
+    const circles = [];
+
+    const total =
+        Math.max(
+            1,
+            rows * cols - 1
+        );
+
+    for (
+        let y = 0;
+        y < rows;
+        y++
+    ) {
+
+        for (
+            let x = 0;
+            x < cols;
+            x++
+        ) {
+
+            const pixelIndex =
+                (
+                    y * cols +
+                    x
+                ) * 4;
+
+            const maskValue =
+                smallMaskData[
+                    pixelIndex
+                ];
+
+            if (
+                maskValue < 125
+            ) {
+                continue;
+            }
+
+            const r =
+                grayData[
+                    pixelIndex
+                ];
+
+            const g =
+                grayData[
+                    pixelIndex + 1
+                ];
+
+            const b =
+                grayData[
+                    pixelIndex + 2
+                ];
+
+            const lum =
+                (
+                    0.299 * r +
+                    0.587 * g +
+                    0.114 * b
+                ) / 255;
+
+            const radius =
+                0.40 +
+                Math.pow(
+                    lum,
+                    0.90
+                ) * 1.15;
+
+            const opacity =
+                0.42 +
+                lum * 0.58;
+
+            const cx =
+                P_X +
+                x * SPACING +
+                SPACING / 2;
+
+            const cy =
+                P_Y +
+                y * SPACING +
+                SPACING / 2;
+
+            const raster =
+                (
+                    y * cols +
+                    x
+                ) / total;
+
+            const appear =
+                1.0 +
+                raster * 5.4;
+
+            const appear2 =
+                Math.min(
+                    appear + 0.10,
+                    7.8
+                );
+
+            let t1 =
+                appear /
+                DURATION;
+
+            let t2 =
+                appear2 /
+                DURATION;
+
+            t1 =
+                Math.max(
+                    0,
+                    Math.min(
+                        0.82,
+                        t1
+                    )
+                );
+
+            t2 =
+                Math.max(
+                    t1,
+                    Math.min(
+                        0.82,
+                        t2
+                    )
+                );
+
+            const keyTimes =
+                [
+                    "0",
+                    t1.toFixed(6),
+                    t2.toFixed(6),
+                    "0.82",
+                    "1"
+                ].join(";");
+
+            const largerRadius =
+                radius + 0.35;
+
+            circles.push(`
+<circle
+    cx="${cx.toFixed(2)}"
+    cy="${cy.toFixed(2)}"
+    r="${radius.toFixed(2)}"
+    fill="#78ff9c"
+    fill-opacity="${opacity.toFixed(3)}"
+    opacity="0">
+
+    <animate
+        attributeName="opacity"
+        values="0;0;1;1;0"
+        keyTimes="${keyTimes}"
+        dur="${DURATION}s"
+        repeatCount="indefinite"/>
+
+    <animate
+        attributeName="r"
+        values="${radius.toFixed(2)};${radius.toFixed(2)};${largerRadius.toFixed(2)};${radius.toFixed(2)};${radius.toFixed(2)}"
+        keyTimes="${keyTimes}"
+        dur="${DURATION}s"
+        repeatCount="indefinite"/>
+
+</circle>
+`);
+        }
+    }
+
+    return circles.join("");
+}
+
+
+/* ============================================================
+   GENERATE SVG
+============================================================ */
+
+function generateSVG(
+    image,
+    mask
+) {
+
+    const D_W = 1400;
+    const D_H = 600;
+
+    const P_W = 460;
+    const P_H = 480;
+
+    const P_X = 850;
+    const P_Y = 60;
+
+    const OUTER_W =
+        D_W - 30;
+
+    const OUTER_H =
+        D_H - 30;
+
+    const INNER_W =
+        D_W - 44;
+
+    const INNER_H =
+        D_H - 44;
+
+    const FRAME_X =
+        P_X - 30;
+
+    const FRAME_Y =
+        P_Y - 2;
+
+    const FRAME_W =
+        P_W + 60;
+
+    const FRAME_H =
+        P_H + 4;
+
+    const INNER_FRAME_X =
+        P_X - 20;
+
+    const INNER_FRAME_Y =
+        P_Y + 8;
+
+    const INNER_FRAME_W =
+        P_W + 40;
+
+    const INNER_FRAME_H =
+        P_H - 16;
+
+    const SCAN_END_X =
+        P_X + P_W;
+
+    const P_END_X =
+        P_X + P_W;
+
+    const P_END_Y =
+        P_Y + P_H;
+
+    const STATUS_X =
+        P_X + P_W + 5;
+
+    const STATUS_Y =
+        P_Y + 32;
+
+    const COMPLETE_DOT_X =
+        P_X + P_W - 8;
+
+    const COMPLETE_DOT_Y =
+        P_Y + 22;
+
+    const COMPLETE_TEXT_X =
+        P_X + P_W - 18;
+
+    const COMPLETE_TEXT_Y =
+        P_Y + 27;
+
+    const CORNER1_X =
+        P_X - 35;
+
+    const CORNER1_Y1 =
+        P_Y + 30;
+
+    const CORNER1_Y2 =
+        P_Y - 7;
+
+    const CORNER1_X2 =
+        P_X + 10;
+
+    const CORNER2_X =
+        P_X + P_W + 35;
+
+    const CORNER2_Y1 =
+        P_Y + P_H - 30;
+
+    const CORNER2_Y2 =
+        P_Y + P_H + 7;
+
+    const CORNER2_X2 =
+        P_X + P_W - 10;
+
+
+    const circles =
+        generateParticles(
+            image,
+            mask
+        );
+
+
+    /*
+        BUILD SKILL TAGS AUTOMATICALLY
+        FROM PROFILE.skills
+    */
+
+    const skillWidths = [
+        105,
+        135,
+        145,
+        75,
+        145
+    ];
+
+    const skillX = [
+        0,
+        120,
+        270,
+        430,
+        520
+    ];
+
+    let skillsSVG = "";
+
+    PROFILE.skills.forEach(
+        (skill, index) => {
+
+            const width =
+                skillWidths[index] ||
+                130;
+
+            const x =
+                skillX[index] !== undefined
+                    ? skillX[index]
+                    : 520 + index * 160;
+
+            const center =
+                x + width / 2;
+
+            const start =
+                0.40 +
+                index * 0.04;
+
+            const end =
+                start + 0.08;
+
+            skillsSVG += `
+
+<g>
+
+    <rect
+        x="${x}"
+        y="0"
+        width="${width}"
+        height="42"
+        rx="10"
+        fill="#06130a"
+        stroke="#48a867"
+        stroke-width="1.5"
+        stroke-dasharray="3,3">
+
+        <animate
+            attributeName="opacity"
+            values="0;0;1;1"
+            keyTimes="0;${start};${end};1"
+            dur="10s"
+            repeatCount="indefinite"/>
+
+    </rect>
+
+    <text
+        class="tag"
+        x="${center}"
+        y="26">
+
+        ${escapeXML(skill)}
+
+        <animate
+            attributeName="opacity"
+            values="0;0;1;1"
+            keyTimes="0;${start};${end};1"
+            dur="10s"
+            repeatCount="indefinite"/>
+
+    </text>
+
+</g>
+
+`;
+        }
+    );
+
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+
+<svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="${D_W}"
+    height="${D_H}"
+    viewBox="0 0 ${D_W} ${D_H}"
+    version="1.1">
+
+<title>
+    ${escapeXML(PROFILE.name)} — Terminal Profile
+</title>
+
+<desc>
+    Animated terminal developer profile with portrait particle animation.
+</desc>
+
+
+<defs>
+
+<filter
+    id="glow"
+    x="-30%"
+    y="-30%"
+    width="160%"
+    height="160%">
+
+    <feGaussianBlur
+        stdDeviation="2.5"
+        result="blur"/>
+
+    <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+    </feMerge>
+
+</filter>
+
+
+<filter
+    id="strongGlow"
+    x="-50%"
+    y="-50%"
+    width="200%"
+    height="200%">
+
+    <feGaussianBlur
+        stdDeviation="5"
+        result="blur"/>
+
+    <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+    </feMerge>
+
+</filter>
+
+
+<linearGradient
+    id="scanGradient"
+    x1="0%"
+    y1="0%"
+    x2="100%"
+    y2="0%">
+
+    <stop
+        offset="0%"
+        stop-color="#78ff9c"
+        stop-opacity="0"/>
+
+    <stop
+        offset="45%"
+        stop-color="#78ff9c"
+        stop-opacity="0.2"/>
+
+    <stop
+        offset="50%"
+        stop-color="#78ff9c"
+        stop-opacity="1"/>
+
+    <stop
+        offset="55%"
+        stop-color="#78ff9c"
+        stop-opacity="0.2"/>
+
+    <stop
+        offset="100%"
+        stop-color="#78ff9c"
+        stop-opacity="0"/>
+
+</linearGradient>
+
+
+<style type="text/css"><![CDATA[
+
+.term-text {
+    font-family:
+        "Courier New",
+        Courier,
+        monospace;
+
+    fill: #78ff9c;
+    filter: url(#glow);
+}
+
+.title {
+    font-family:
+        "Courier New",
+        Courier,
+        monospace;
+
+    font-size: 52px;
+    font-weight: bold;
+    letter-spacing: 2px;
+    fill: #78ff9c;
+}
+
+.subtitle {
+    font-family:
+        "Courier New",
+        Courier,
+        monospace;
+
+    font-size: 18px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    fill: #52c478;
+}
+
+.tag {
+    font-family:
+        "Courier New",
+        Courier,
+        monospace;
+
+    font-size: 15px;
+    font-weight: bold;
+    fill: #78ff9c;
+    text-anchor: middle;
+}
+
+.comment {
+    font-family:
+        "Courier New",
+        Courier,
+        monospace;
+
+    font-size: 16px;
+    fill: #48a867;
+    opacity: 0.75;
+}
+
+.meta {
+    font-family:
+        "Courier New",
+        Courier,
+        monospace;
+
+    font-size: 15px;
+    fill: #48a867;
+    opacity: 0.8;
+}
+
+.status {
+    font-family:
+        "Courier New",
+        Courier,
+        monospace;
+
+    font-size: 16px;
+    font-weight: bold;
+    fill: #78ff9c;
+}
+
+.terminal-line {
+    stroke: #48a867;
+    fill: none;
+}
+
+]]></style>
+
+</defs>
+
+
+<!-- BACKGROUND -->
+
+<rect
+    x="0"
+    y="0"
+    width="${D_W}"
+    height="${D_H}"
+    fill="#030a05"/>
+
+
+<g
+    opacity="0.08"
+    stroke="#48a867"
+    stroke-width="1">
+
+    <path d="M 30 100 H 1370"/>
+    <path d="M 30 200 H 1370"/>
+    <path d="M 30 300 H 1370"/>
+    <path d="M 30 400 H 1370"/>
+    <path d="M 30 500 H 1370"/>
+
+</g>
+
+
+<!-- OUTER FRAME -->
+
+<rect
+    x="15"
+    y="15"
+    width="${OUTER_W}"
+    height="${OUTER_H}"
+    rx="15"
+    fill="#000000"
+    stroke="#1d4227"
+    stroke-width="3"/>
+
+<rect
+    x="22"
+    y="22"
+    width="${INNER_W}"
+    height="${INNER_H}"
+    rx="10"
+    fill="none"
+    stroke="#0b1c10"
+    stroke-width="1"/>
+
+
+<!-- TERMINAL HEADER -->
+
+<g transform="translate(65, 52)">
+
+    <circle
+        cx="5"
+        cy="0"
+        r="3"
+        fill="#78ff9c">
+
+        <animate
+            attributeName="opacity"
+            values="1;0.25;1"
+            dur="1.5s"
+            repeatCount="indefinite"/>
+
+    </circle>
+
+    <text
+        x="18"
+        y="5"
+        class="meta">
+
+        TERMINAL_PROFILE.exe
+
+    </text>
+
+    <text
+        x="285"
+        y="5"
+        class="meta">
+
+        SYSTEM ONLINE
+
+    </text>
+
+</g>
+
+
+<!-- LEFT PROFILE -->
+
+<g transform="translate(65, 105)">
+
+
+<!-- HELLO -->
+
+<text
+    class="subtitle"
+    x="0"
+    y="0">
+
+    &gt; HELLO, WORLD
+
+    <animate
+        attributeName="opacity"
+        values="0;0;1;1"
+        keyTimes="0;0.05;0.15;1"
+        dur="10s"
+        repeatCount="indefinite"/>
+
+</text>
+
+
+<!-- NAME -->
+
+<text
+    class="title"
+    x="0"
+    y="65">
+
+    ${escapeXML(PROFILE.name)}
+
+    <animate
+        attributeName="opacity"
+        values="0;0;1;1"
+        keyTimes="0;0.15;0.28;1"
+        dur="10s"
+        repeatCount="indefinite"/>
+
+    <animate
+        attributeName="transform"
+        values="translate(-20 0);translate(-20 0);translate(0 0);translate(0 0)"
+        keyTimes="0;0.15;0.28;1"
+        dur="10s"
+        repeatCount="indefinite"/>
+
+</text>
+
+
+<!-- CURSOR -->
+
+<text
+    class="title"
+    x="0"
+    y="125">
+
+    <tspan
+        fill="#3cfc73"
+        stroke="#3cfc73"
+        stroke-width="2">
+
+        _
+
+        <animate
+            attributeName="opacity"
+            values="1;0;1"
+            dur="0.8s"
+            repeatCount="indefinite"/>
+
+    </tspan>
+
+</text>
+
+
+<!-- PROFESSION -->
+
+<text
+    class="subtitle"
+    x="0"
+    y="185">
+
+    ${escapeXML(PROFILE.profession)}
+
+    <animate
+        attributeName="opacity"
+        values="0;0;1;1"
+        keyTimes="0;0.30;0.42;1"
+        dur="10s"
+        repeatCount="indefinite"/>
+
+</text>
+
+
+<!-- SKILLS -->
+
+<g transform="translate(0, 225)">
+
+${skillsSVG}
+
+</g>
+
+
+<!-- DESCRIPTION -->
+
+<text
+    class="comment"
+    x="0"
+    y="340">
+
+    ${escapeXML(PROFILE.description)}
+
+    <animate
+        attributeName="opacity"
+        values="0;0;0.75;0.75"
+        keyTimes="0;0.60;0.72;1"
+        dur="10s"
+        repeatCount="indefinite"/>
+
+</text>
+
+
+<!-- COMMAND -->
+
+<text
+    class="meta"
+    x="0"
+    y="385">
+
+    &gt; initializing profile...
+
+    <animate
+        attributeName="opacity"
+        values="1;0.2;1"
+        dur="1.8s"
+        repeatCount="indefinite"/>
+
+</text>
+
+</g>
+
+
+<!-- PORTRAIT FRAME -->
+
+<rect
+    x="${FRAME_X}"
+    y="${FRAME_Y}"
+    width="${FRAME_W}"
+    height="${FRAME_H}"
+    rx="8"
+    fill="#020704"
+    stroke="#132e1b"
+    stroke-width="2"/>
+
+
+<rect
+    x="${INNER_FRAME_X}"
+    y="${INNER_FRAME_Y}"
+    width="${INNER_FRAME_W}"
+    height="${INNER_FRAME_H}"
+    rx="5"
+    fill="none"
+    stroke="#0d2917"
+    stroke-width="1"/>
+
+
+<!-- SCANNER CORNERS -->
+
+<path
+    d="
+        M ${CORNER1_X} ${CORNER1_Y1}
+        L ${CORNER1_X} ${CORNER1_Y2}
+        L ${CORNER1_X2} ${CORNER1_Y2}
+    "
+    class="terminal-line"
+    stroke-width="2"/>
+
+
+<path
+    d="
+        M ${CORNER2_X} ${CORNER2_Y1}
+        L ${CORNER2_X} ${CORNER2_Y2}
+        L ${CORNER2_X2} ${CORNER2_Y2}
+    "
+    class="terminal-line"
+    stroke-width="2"/>
+
+
+<!-- VERTICAL SCANNER -->
+
+<rect
+    x="${P_X}"
+    y="${P_Y}"
+    width="8"
+    height="${P_H}"
+    fill="url(#scanGradient)"
+    opacity="0">
+
+    <animate
+        attributeName="x"
+        values="${P_X};${SCAN_END_X};${P_X}"
+        dur="4s"
+        begin="0s"
+        repeatCount="indefinite"/>
+
+    <animate
+        attributeName="opacity"
+        values="0;0.9;0"
+        dur="4s"
+        repeatCount="indefinite"/>
+
+</rect>
+
+
+<!-- HORIZONTAL SCANNER -->
+
+<line
+    x1="${P_X}"
+    y1="${P_Y}"
+    x2="${P_END_X}"
+    y2="${P_Y}"
+    stroke="#78ff9c"
+    stroke-width="1.5"
+    opacity="0">
+
+    <animate
+        attributeName="y1"
+        values="${P_Y};${P_END_Y};${P_Y}"
+        dur="3.5s"
+        repeatCount="indefinite"/>
+
+    <animate
+        attributeName="y2"
+        values="${P_Y};${P_END_Y};${P_Y}"
+        dur="3.5s"
+        repeatCount="indefinite"/>
+
+    <animate
+        attributeName="opacity"
+        values="0;0.8;0"
+        dur="3.5s"
+        repeatCount="indefinite"/>
+
+</line>
+
+
+<!-- SCANNING -->
+
+<text
+    class="status"
+    x="${STATUS_X}"
+    y="${STATUS_Y}"
+    text-anchor="end">
+
+    SCANNING
+
+    <animate
+        attributeName="opacity"
+        values="1;0.3;1"
+        dur="0.8s"
+        repeatCount="indefinite"/>
+
+</text>
+
+
+<!-- COMPLETE -->
+
+<g>
+
+    <circle
+        cx="${COMPLETE_DOT_X}"
+        cy="${COMPLETE_DOT_Y}"
+        r="3"
+        fill="#78ff9c">
+
+        <animate
+            attributeName="opacity"
+            values="0;0;1;1"
+            keyTimes="0;0.60;0.75;1"
+            dur="10s"
+            repeatCount="indefinite"/>
+
+    </circle>
+
+    <text
+        class="status"
+        x="${COMPLETE_TEXT_X}"
+        y="${COMPLETE_TEXT_Y}"
+        text-anchor="end">
+
+        COMPLETE
+
+        <animate
+            attributeName="opacity"
+            values="0;0;1;1"
+            keyTimes="0;0.60;0.75;1"
+            dur="10s"
+            repeatCount="indefinite"/>
+
+    </text>
+
+</g>
+
+
+<!-- PORTRAIT PARTICLES -->
+
+<g
+    id="portrait"
+    filter="url(#glow)">
+
+${circles}
+
+</g>
+
+
+<!-- PORTRAIT GLOW -->
+
+<rect
+    x="${P_X}"
+    y="${P_Y}"
+    width="${P_W}"
+    height="${P_H}"
+    fill="none"
+    stroke="#78ff9c"
+    stroke-width="1"
+    opacity="0.05">
+
+    <animate
+        attributeName="opacity"
+        values="0.02;0.10;0.02"
+        dur="2.5s"
+        repeatCount="indefinite"/>
+
+</rect>
+
+
+<!-- FOOTER -->
+
+<text
+    class="meta"
+    x="850"
+    y="572">
+
+    ${escapeXML(PROFILE.footer)}
+
+    <animate
+        attributeName="opacity"
+        values="0.4;1;0.4"
+        dur="2s"
+        repeatCount="indefinite"/>
+
+</text>
+
+
+<!-- SYSTEM INDICATORS -->
+
+<g transform="translate(65, 555)">
+
+    <circle
+        cx="0"
+        cy="0"
+        r="3"
+        fill="#78ff9c">
+
+        <animate
+            attributeName="opacity"
+            values="1;0.2;1"
+            dur="1s"
+            repeatCount="indefinite"/>
+
+    </circle>
+
+    <text
+        class="meta"
+        x="12"
+        y="5">
+
+        SECURE CONNECTION
+
+    </text>
+
+
+    <circle
+        cx="205"
+        cy="0"
+        r="3"
+        fill="#52c478">
+
+        <animate
+            attributeName="opacity"
+            values="1;0.2;1"
+            dur="1.4s"
+            repeatCount="indefinite"/>
+
+    </circle>
+
+    <text
+        class="meta"
+        x="217"
+        y="5">
+
+        AI ENGINE READY
+
+    </text>
+
+
+    <circle
+        cx="405"
+        cy="0"
+        r="3"
+        fill="#3cfc73">
+
+        <animate
+            attributeName="opacity"
+            values="1;0.2;1"
+            dur="1.8s"
+            repeatCount="indefinite"/>
+
+    </circle>
+
+    <text
+        class="meta"
+        x="417"
+        y="5">
+
+        PYTHON RUNTIME
+
+    </text>
+
+</g>
+
+</svg>`;
+}
+
+
+/* ============================================================
+   START
+============================================================ */
+
+/*
+    Start loading the image immediately.
+    OpenCV can load in parallel.
+*/
+
+loadLocalPortrait();
+
+</script>
+
+</body>
+</html>
+
